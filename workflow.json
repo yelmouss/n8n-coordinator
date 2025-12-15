@@ -1,0 +1,396 @@
+{
+  "name": "AI Web Request Analyzer | Form → Tasks Table",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 📘 WORKFLOW DOCUMENTATION\n\n**PRODUCT:** AI Web Request Analyzer v3.0\n\n**PURPOSE:**\nAnalyze client web requests using AI.\nInput: Form with Request + URL\nOutput: Detailed tasks table\n\n**HOW TO USE:**\n1. Open workflow form URL\n2. Fill Request field (demande client)\n3. Fill URL field (website URL)\n4. Submit → Get tasks table\n\n**SIMPLIFIED VERSION:**\n• Single form submission\n• Automatic scraping & analysis\n• Direct table output",
+        "height": 400,
+        "width": 380
+      },
+      "id": "0",
+      "name": "📘 DOCUMENTATION",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-1200, -400]
+    },
+    {
+      "parameters": {
+        "path": "analyze-request",
+        "formTitle": "🔍 Analyseur de Demande Client",
+        "formDescription": "Analysez une demande client et obtenez des tâches détaillées",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "📝 Demande Client",
+              "fieldType": "textarea",
+              "requiredField": true,
+              "fieldOptions": {
+                "placeholder": "Collez ici l'email ou la demande du client..."
+              }
+            },
+            {
+              "fieldLabel": "🌐 URL du Site Web",
+              "fieldType": "text",
+              "requiredField": true,
+              "fieldOptions": {
+                "placeholder": "https://example.com"
+              }
+            }
+          ]
+        },
+        "responseMode": "lastNode",
+        "options": {
+          "ignoreBots": false
+        }
+      },
+      "id": "1",
+      "name": "📋 Form Trigger",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.1,
+      "position": [-800, 0],
+      "webhookId": "analyze-form"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "userInput",
+              "value": "={{ $json['📝 Demande Client'] ?? $json['Demande Client'] ?? $json.userInput ?? $json.request ?? $json.body?.['📝 Demande Client'] ?? $json.body?.['Demande Client'] ?? $json.data?.['📝 Demande Client'] ?? $json.data?.['Demande Client'] ?? $json.submission?.['📝 Demande Client'] ?? $json.submission?.['Demande Client'] }}",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "websiteUrl",
+              "value": "={{ $json['🌐 URL du Site Web'] ?? $json['URL du Site Web'] ?? $json.websiteUrl ?? $json.url ?? $json.body?.['🌐 URL du Site Web'] ?? $json.body?.['URL du Site Web'] ?? $json.data?.['🌐 URL du Site Web'] ?? $json.data?.['URL du Site Web'] ?? $json.submission?.['🌐 URL du Site Web'] ?? $json.submission?.['URL du Site Web'] }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "keepOnlySet": false
+        }
+      },
+      "id": "2",
+      "name": "Extract Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [-600, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openRouterApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"model\": \"meta-llama/llama-3.3-70b-instruct:free\", \"messages\": [{ \"role\": \"user\", \"content\": \"Return STRICT JSON only with keys: summary, explicit_requests, implicit_requests, pages_mentioned, website_context, confidence.\\nRequest:\\n\" + ($json.userInput || $json['📝 Demande Client'] || $json['Demande Client'] || $json.body?.['📝 Demande Client'] || $json.body?.['Demande Client'] || '') + \"\\nWebsite:\\n\" + ($json.websiteUrl || $json['🌐 URL du Site Web'] || $json['URL du Site Web'] || $json.url || $json.body?.['🌐 URL du Site Web'] || $json.body?.['URL du Site Web'] || '') }] } }}",
+        "options": {}
+      },
+      "id": "3",
+      "name": "🧠 AI-01 Analyze",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-200, -100],
+      "credentials": {
+        "openRouterApi": {
+          "id": "GJQbRFsFn1ihy380",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p1",
+              "name": "analysis",
+              "value": "={{ $json.choices[0].message.content }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4",
+      "name": "Parse AI-01",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [100, -100]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "copy1",
+              "name": "analysis",
+              "value": "={{ $json.analysis }}",
+              "type": "string"
+            },
+            {
+              "id": "copy2",
+              "name": "userInput",
+              "value": "={{ $('Extract Data').first().json.userInput }}",
+              "type": "string"
+            },
+            {
+              "id": "copy3",
+              "name": "websiteUrl",
+              "value": "={{ $('Extract Data').first().json.websiteUrl }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "11",
+      "name": "Add Context to Analysis",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [250, -100]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.websiteUrl || $json['🌐 URL du Site Web'] || $json['URL du Site Web'] || $json.url || $json.body?.['🌐 URL du Site Web'] || $json.body?.['URL du Site Web'] || $('Extract Data').first().json.websiteUrl }}",
+        "options": {}
+      },
+      "id": "5",
+      "name": "🌐 Scrape Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-200, 100]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s1",
+              "name": "websiteContent",
+              "value": "={{ $json.body ? $json.body.toString().substring(0, 15000) : JSON.stringify($json).substring(0, 15000) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7",
+      "name": "Extract HTML",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [0, 100]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "copy1",
+              "name": "websiteContent",
+              "value": "={{ $json.websiteContent }}",
+              "type": "string"
+            },
+            {
+              "id": "copy2",
+              "name": "websiteUrl",
+              "value": "={{ $('Extract Data').first().json.websiteUrl }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "12",
+      "name": "Add Context to HTML",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [200, 100]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll"
+      },
+      "id": "9",
+      "name": "Merge Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [450, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openRouterApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"model\": \"meta-llama/llama-3.3-70b-instruct:free\", \"messages\": [{ \"role\": \"user\", \"content\": \"Retourne UNIQUEMENT un tableau Markdown (pas de texte autour).\\n\\nColonnes EXACTES :\\n| Page (nom ou URL) | Bloc (titre H1/H2/H3) | Modification a faire |\\n\\nRegles :\\n- 1 ligne = 1 action concrete (verbe + detail)\\n- Page: URL exacte si possible, sinon Accueil ou URL du site\\n- Bloc: titre H1/H2/H3 exact si possible, sinon un titre court (Hero, Header, Footer, etc.)\\n- Minimum 8 lignes\\n\\nDEMANDE (analyse) :\\n\" + ($json.analysis || '') + \"\\n\\nSITE : \" + ($json.websiteUrl || '') + \"\\n\\nHTML (extrait) :\\n\" + ($json.websiteContent || '') }] } }}",
+        "options": {}
+      },
+      "id": "8",
+      "name": "🧠 AI-02 Generate Tasks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 0],
+      "credentials": {
+        "openRouterApi": {
+          "id": "GJQbRFsFn1ihy380",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "out2",
+              "name": "tasks",
+              "value": "={{ $json.choices[0].message.content }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "keepOnlySet": true
+        }
+      },
+      "id": "6",
+      "name": "📤 OUTPUT",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [850, 0]
+    }
+  ],
+  "connections": {
+    "📋 Form Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Data": {
+      "main": [
+        [
+          {
+            "node": "🧠 AI-01 Analyze",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "🌐 Scrape Website",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧠 AI-01 Analyze": {
+      "main": [
+        [
+          {
+            "node": "Parse AI-01",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI-01": {
+      "main": [
+        [
+          {
+            "node": "Add Context to Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Context to Analysis": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🌐 Scrape Website": {
+      "main": [
+        [
+          {
+            "node": "Extract HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract HTML": {
+      "main": [
+        [
+          {
+            "node": "Add Context to HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Context to HTML": {
+      "main": [
+        [
+          {
+            "node": "Merge Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Data": {
+      "main": [
+        [
+          {
+            "node": "🧠 AI-02 Generate Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧠 AI-02 Generate Tasks": {
+      "main": [
+        [
+          {
+            "node": "📤 OUTPUT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-12-15T00:00:00.000Z",
+  "versionId": "2"
+}
