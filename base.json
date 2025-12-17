@@ -155,15 +155,60 @@
     },
     {
       "parameters": {
-        "mode": "combine",
-        "combineBy": "combineByPosition",
+        "url": "={{ (() => { const urlRe = /(https?:\\/\\/[^\\s\"'<>]+)/i; const candidates = []; const push = (v) => { if (v === undefined || v === null) return; if (typeof v === 'string') { const t = v.trim(); if (t) candidates.push(t); } }; push($json.websiteUrl); push($json.url); push($json['🌐 URL du Site Web']); push($json['URL du Site Web']); push($node['Extract Data']?.json?.websiteUrl); push($node['Extract Data']?.json?.url); push($node['📋 Form Trigger']?.json?.['🌐 URL du Site Web']); push($node['📋 Form Trigger']?.json?.['URL du Site Web']); push($node['📋 Form Trigger']?.json?.websiteUrl); push($node['📋 Form Trigger']?.json?.url); for (const c of candidates) { const m = c.match(urlRe); if (m) return m[1]; } const raw = JSON.stringify($json); const m = raw.match(urlRe); return m ? m[1] : ''; })() }}",
+        "options": {}
+      },
+      "id": "5",
+      "name": "🌐 Scrape Website",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-200, 100]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s1",
+              "name": "websiteContent",
+              "value": "={{ ( (typeof ($json.body ?? $json.data ?? $json.response?.body ?? $json.html ?? $json.text) === 'string') ? ($json.body ?? $json.data ?? $json.response?.body ?? $json.html ?? $json.text) : ((($json.body ?? $json.data ?? $json.response?.body ?? $json.html ?? $json.text) !== undefined && ($json.body ?? $json.data ?? $json.response?.body ?? $json.html ?? $json.text) !== null) ? ($json.body ?? $json.data ?? $json.response?.body ?? $json.html ?? $json.text).toString() : JSON.stringify($json)) ).substring(0, 15000) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7",
+      "name": "Extract HTML",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [0, 100]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "copy1",
+              "name": "websiteContent",
+              "value": "={{ $json.websiteContent }}",
+              "type": "string"
+            },
+            {
+              "id": "copy2",
+              "name": "websiteUrl",
+              "value": "={{ $node['Extract Data']?.json?.websiteUrl ?? $node['📋 Form Trigger']?.json?.['🌐 URL du Site Web'] ?? $node['📋 Form Trigger']?.json?.['URL du Site Web'] ?? '' }}",
+              "type": "string"
+            }
+          ]
+        },
         "options": {}
       },
       "id": "12",
-      "name": "Merge Data",
-      "type": "n8n-nodes-base.merge",
+      "name": "Add Context to HTML",
+      "type": "n8n-nodes-base.set",
       "typeVersion": 3,
-      "position": [600, 0]
+      "position": [200, 100]
     },
     {
       "parameters": {
@@ -172,25 +217,25 @@
             {
               "id": "ap1",
               "name": "analysis",
-              "value": "={{ $json.analysis }}",
+              "value": "={{ $items('Add Context to Analysis', 0, 0)[0].json.analysis }}",
               "type": "string"
             },
             {
               "id": "ap2",
               "name": "userInput",
-              "value": "={{ $json.userInput }}",
+              "value": "={{ $items('Add Context to Analysis', 0, 0)[0].json.userInput }}",
               "type": "string"
             },
             {
               "id": "ap3",
               "name": "websiteUrl",
-              "value": "={{ $json.websiteUrl }}",
+              "value": "={{ $items('Add Context to Analysis', 0, 0)[0].json.websiteUrl }}",
               "type": "string"
             },
             {
               "id": "ap4",
               "name": "websiteContent",
-              "value": "={{ $json.allPagesHtml }}",
+              "value": "={{ $items('Add Context to HTML', 0, 0)[0].json.websiteContent }}",
               "type": "string"
             }
           ]
@@ -201,7 +246,7 @@
       "name": "Assemble Payload",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
-      "position": [800, 0]
+      "position": [450, 100]
     },
     {
       "parameters": {
@@ -211,14 +256,14 @@
         "nodeCredentialType": "openRouterApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { \"model\": \"meta-llama/llama-3.3-70b-instruct:free\", \"messages\": [{ \"role\": \"user\", \"content\": \"Tu es un chef de projet technique. Ton but: ecrire une liste de taches ultra claires pour un developpeur.\\n\\nIMPORTANT: N invente PAS des pages generiques (produits, blog, etc.) si elles ne sont pas mentionnees par le client. Base-toi sur la demande client et, si possible, sur le HTML fourni. Si le HTML est vide ou inutilisable, tu dois quand meme produire des taches BASEES UNIQUEMENT sur la demande client, sans inventer des pages: dans ce cas, utilise 'Site (global)' comme Page quand tu ne peux pas identifier une page precise.\\n\\nSoyez très precis, prenez seulement ce qui a été demandé dans la demande client, pas de rajout ni de minimum de tâche.\\n\\nFORMAT OBLIGATOIRE (ET RIEN D AUTRE):\\n- Reponds UNIQUEMENT avec des lignes au format 'Page /path/ > Bloc title > modification exacte à faire'.\\n- AUCUNE phrase avant/apres, AUCUN commentaire, AUCUN markdown, AUCUN numerotation.\\n\\nPage /path/ > Bloc title > modification exacte à faire\\nPage /path/ > Bloc title > modification exacte à faire\\n...\\n\\nRegles:\\n- Une tache = une modification concrete, actionnable, avec un verbe.\\n- Page: utilise le format /path/ pour le chemin de la page (ex: /, /about, /services). Si inconnu, utilise le nom de page.\\n- Bloc title: titre du bloc ou zone (ex: Header, Section Tarifs, H1 Accueil).\\n\\nCONTEXTE:\\n- Site: \" + ($json.websiteUrl || '') + \"\\n- Demande client (brut):\\n\" + (($json.userInput || $node['Extract Data']?.json?.userInput || $node['📋 Form Trigger']?.json?.['📝 Demande Client'] || $node['📋 Form Trigger']?.json?.['Demande Client'] || '') + '') + \"\\n- Demande client (analyse):\\n\" + (($json.analysis || $node['Add Context to Analysis']?.json?.analysis || '') + '') + \"\\n- HTML (extrait):\\n\" + (($json.websiteContent || $json.data || $json.body || $json.response?.body || '') + '') }] } }}",
+        "jsonBody": "={{ { \"model\": \"meta-llama/llama-3.3-70b-instruct:free\", \"messages\": [{ \"role\": \"user\", \"content\": \"Tu es un chef de projet technique. Ton but: ecrire une liste de taches ultra claires pour un developpeur.\\n\\nIMPORTANT: N invente PAS des pages generiques (produits, blog, etc.) si elles ne sont pas mentionnees par le client. Base-toi sur la demande client et, si possible, sur le HTML fourni. Si le HTML est vide ou inutilisable, tu dois quand meme produire des taches BASEES UNIQUEMENT sur la demande client, sans inventer des pages: dans ce cas, utilise 'Site (global)' comme Page quand tu ne peux pas identifier une page precise.\\n\\nFORMAT OBLIGATOIRE (ET RIEN D AUTRE):\\n- Reponds UNIQUEMENT avec des lignes qui commencent par 'Tache N :'.\\n- AUCUNE phrase avant/apres, AUCUN commentaire, AUCUN markdown.\\n\\nTache 1 : <Page (nom ou URL)> > <Bloc a modifier (titre H1/H2/H3 ou zone)> > <Modification a faire>\\nTache 2 : ...\\n\\nRegles:\\n- Une tache = une modification concrete, actionnable, avec un verbe.\\n- Page: mets l URL exacte si tu la connais. Sinon mets le nom de page (ex: Tarifs, Avis Google, Soins, Soins mains/pieds, Soin du visage, Massages, Rituels, Drainage lymphatique).\\n- Bloc: mets un titre H1/H2/H3 exact si tu le vois dans le HTML. Sinon mets une zone simple (Header, Menu, Section Tarifs, Section Avis, Carte des soins, etc.).\\n- Minimum 10 taches.\\n\\nCONTEXTE:\\n- Site: \" + ($json.websiteUrl || '') + \"\\n- Demande client (brut):\\n\" + (($json.userInput || $node['Extract Data']?.json?.userInput || $node['📋 Form Trigger']?.json?.['📝 Demande Client'] || $node['📋 Form Trigger']?.json?.['Demande Client'] || '') + '') + \"\\n- Demande client (analyse):\\n\" + (($json.analysis || $node['Add Context to Analysis']?.json?.analysis || '') + '') + \"\\n- HTML (extrait):\\n\" + (($json.websiteContent || $json.data || $json.body || $json.response?.body || '') + '') }] } }}",
         "options": {}
       },
       "id": "8",
       "name": "🧠 AI-02 Generate Tasks",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1000, 0],
+      "position": [650, 0],
       "credentials": {
         "openRouterApi": {
           "id": "GJQbRFsFn1ihy380",
@@ -242,90 +287,11 @@
           "keepOnlySet": true
         }
       },
-
       "id": "6",
       "name": "📤 OUTPUT",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
-      "position": [1200, 0]
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "={{ (() => { const urlRe = /(https?:\\/\\/[^\\s\"'<>]+)/i; const candidates = []; const push = (v) => { if (v === undefined || v === null) return; if (typeof v === 'string') { const t = v.trim(); if (t) candidates.push(t); } }; push($json.websiteUrl); push($json.url); push($json['🌐 URL du Site Web']); push($json['URL du Site Web']); push($node['Extract Data']?.json?.websiteUrl); push($node['Extract Data']?.json?.url); push($node['📋 Form Trigger']?.json?.['🌐 URL du Site Web']); push($node['📋 Form Trigger']?.json?.['URL du Site Web']); push($node['📋 Form Trigger']?.json?.websiteUrl); push($node['📋 Form Trigger']?.json?.url); for (const c of candidates) { const m = c.match(urlRe); if (m) return m[1]; } const raw = JSON.stringify($json); const m = raw.match(urlRe); return m ? m[1] : ''; })() }}",
-        "options": {
-          "redirect": {
-            "redirect": {
-              "followRedirects": true
-            }
-          }
-        }
-      },
-      "id": "14",
-      "name": "Fetch Homepage",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [-400, 200]
-    },
-    {
-      "parameters": {
-        "jsCode": "const html = $input.item.json.body || $input.item.json.data || '';\nconst baseUrl = 'https://www.travaux-forestiers.com';\n\nconst urls = [baseUrl];\n\nconst allHrefs = html.split('href=');\n\nfor (let i = 1; i < allHrefs.length && urls.length < 20; i++) {\n  const part = allHrefs[i];\n  let url = '';\n  \n  if (part[0] === '\"') {\n    const end = part.indexOf('\"', 1);\n    if (end > 0) url = part.substring(1, end);\n  } else if (part[0] === \"'\") {\n    const end = part.indexOf(\"'\", 1);\n    if (end > 0) url = part.substring(1, end);\n  }\n  \n  if (!url || url[0] === '#' || url.substring(0, 7) === 'mailto:' || url.substring(0, 4) === 'tel:') {\n    continue;\n  }\n  \n  if (url[0] === '/') {\n    url = baseUrl + url;\n  } else if (url.substring(0, 4) !== 'http') {\n    continue;\n  }\n  \n  if (url.substring(0, baseUrl.length) === baseUrl) {\n    const qPos = url.indexOf('?');\n    const hPos = url.indexOf('#');\n    if (qPos > 0) url = url.substring(0, qPos);\n    if (hPos > 0) url = url.substring(0, hPos);\n    \n    let found = false;\n    for (let j = 0; j < urls.length; j++) {\n      if (urls[j] === url) {\n        found = true;\n        break;\n      }\n    }\n    if (!found) urls.push(url);\n  }\n}\n\nreturn urls.map(u => ({ url: u }));"
-      },
-      "id": "15",
-      "name": "Extract Navigation Links",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [-200, 200]
-    },
-
-    {
-      "parameters": {
-        "url": "={{ $json.url }}",
-        "options": {}
-      },
-      "id": "17",
-      "name": "Scrape Page",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [0, 200]
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "p1",
-              "name": "pageUrl",
-              "value": "={{ $json.url }}",
-              "type": "string"
-            },
-            {
-              "id": "p2",
-              "name": "pageHtml",
-              "value": "={{ ($json.body || '').substring(0, 5000) }}",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "18",
-      "name": "Extract Page HTML",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3,
-      "position": [200, 200]
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
-        "code": "const items = $input.all();\nlet combinedHtml = '';\nfor (const item of items) {\n  const url = item.json.pageUrl || '';\n  const html = item.json.pageHtml || '';\n  combinedHtml += `\\n\\n---PAGE: ${url}---\\n${html}`;\n}\nreturn [{ json: { allPagesHtml: combinedHtml } }];"
-      },
-      "id": "19",
-      "name": "Aggregate HTML",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [400, 200]
+      "position": [850, 0]
     }
   ],
   "connections": {
@@ -347,66 +313,6 @@
             "node": "🧠 AI-01 Analyze",
             "type": "main",
             "index": 0
-          },
-          {
-            "node": "Fetch Homepage",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch Homepage": {
-      "main": [
-        [
-          {
-            "node": "Extract Navigation Links",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Extract Navigation Links": {
-      "main": [
-        [
-          {
-            "node": "Scrape Page",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Scrape Page": {
-      "main": [
-        [
-          {
-            "node": "Extract Page HTML",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Extract Page HTML": {
-      "main": [
-        [
-          {
-            "node": "Aggregate HTML",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Aggregate HTML": {
-      "main": [
-        [
-          {
-            "node": "Merge Data",
-            "type": "main",
-            "index": 1
           }
         ]
       ]
@@ -437,14 +343,36 @@
       "main": [
         [
           {
-            "node": "Merge Data",
+            "node": "🌐 Scrape Website",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Merge Data": {
+    "🌐 Scrape Website": {
+      "main": [
+        [
+          {
+            "node": "Extract HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract HTML": {
+      "main": [
+        [
+          {
+            "node": "Add Context to HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Context to HTML": {
       "main": [
         [
           {
