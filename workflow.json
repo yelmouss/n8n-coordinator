@@ -94,6 +94,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [-200, -100],
+      "continueOnFail": true,
       "credentials": {
         "openRouterApi": {
           "id": "GJQbRFsFn1ihy380",
@@ -108,7 +109,7 @@
             {
               "id": "p1",
               "name": "analysis",
-              "value": "={{ $json.choices[0].message.content }}",
+              "value": "={{ $json.choices?.[0]?.message?.content || 'Analysis unavailable' }}",
               "type": "string"
             }
           ]
@@ -219,6 +220,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [1000, 0],
+      "continueOnFail": true,
       "credentials": {
         "openRouterApi": {
           "id": "GJQbRFsFn1ihy380",
@@ -233,7 +235,7 @@
             {
               "id": "out2",
               "name": "tasks",
-              "value": "={{ $json.choices[0].message.content }}",
+              "value": "={{ $json.choices?.[0]?.message?.content || 'Tasks generation failed - please try again' }}",
               "type": "string"
             }
           ]
@@ -269,7 +271,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const html = $input.item.json.body || $input.item.json.data || '';\n\nconst extractOrigin = (value) => {\n  if (!value || typeof value !== 'string') return '';\n  try {\n    return new URL(value.trim()).origin;\n  } catch (error) {\n    return '';\n  }\n};\n\n// Try to find the website URL from previous nodes\nlet possibleUrl = '';\n\n// 1. Try Extract Data node\nif ($node['Extract Data'] && $node['Extract Data'].json) {\n  possibleUrl = $node['Extract Data'].json.websiteUrl || $node['Extract Data'].json.url;\n}\n\n// 2. Try Form Trigger node\nif (!possibleUrl && $node['📋 Form Trigger'] && $node['📋 Form Trigger'].json) {\n  possibleUrl = $node['📋 Form Trigger'].json['🌐 URL du Site Web'] || $node['📋 Form Trigger'].json['URL du Site Web'];\n}\n\n// 3. Try current input\nif (!possibleUrl) {\n  possibleUrl = $json.websiteUrl || $json.url || $json['🌐 URL du Site Web'] || $json['URL du Site Web'];\n}\n\nlet baseUrl = extractOrigin(possibleUrl);\n\n// 4. Fallback to request details in current item\nif (!baseUrl) {\n  const candidates = [\n    $input.item.json.request?.options?.uri?.href,\n    $input.item.json.request?.options?.uri,\n    $input.item.json.request?.options?.url,\n    $input.item.json.request?.uri?.href,\n    $input.item.json.request?.uri,\n    $input.item.json.request?.url,\n    $input.item.json.url\n  ];\n  for (const candidate of candidates) {\n    baseUrl = extractOrigin(candidate);\n    if (baseUrl) break;\n  }\n}\n\nif (!baseUrl) {\n  // If no URL found, return empty array to stop execution of this branch\n  // but do not throw error\n  return [];\n}\n\nconst urls = [baseUrl];\n\nconst allHrefs = html.split('href=');\n\nfor (let i = 1; i < allHrefs.length && urls.length < 20; i++) {\n  const part = allHrefs[i];\n  let url = '';\n  \n  if (part[0] === '\"') {\n    const end = part.indexOf('\"', 1);\n    if (end > 0) url = part.substring(1, end);\n  } else if (part[0] === \"'\") {\n    const end = part.indexOf(\"'\", 1);\n    if (end > 0) url = part.substring(1, end);\n  }\n  \n  if (!url || url[0] === '#' || url.substring(0, 7) === 'mailto:' || url.substring(0, 4) === 'tel:') {\n    continue;\n  }\n  \n  if (url[0] === '/') {\n    url = baseUrl + url;\n  } else if (url.substring(0, 4) !== 'http') {\n    continue;\n  }\n  \n  if (url.substring(0, baseUrl.length) === baseUrl) {\n    const qPos = url.indexOf('?');\n    const hPos = url.indexOf('#');\n    if (qPos > 0) url = url.substring(0, qPos);\n    if (hPos > 0) url = url.substring(0, hPos);\n    \n    let found = false;\n    for (let j = 0; j < urls.length; j++) {\n      if (urls[j] === url) {\n        found = true;\n        break;\n      }\n    }\n    if (!found) urls.push(url);\n  }\n}\n\nreturn urls.map(u => ({ url: u }));"
+        "jsCode": "// Get HTML from Fetch Homepage\nconst html = $input.item.json.body || $input.item.json.data || '';\n\n// Extract URL from the headers link or construct from current data\nlet websiteUrl = '';\n\n// Try to get URL from headers.link or construct it\nconst headers = $input.item.json.headers || {};\nconst linkHeader = headers.link || '';\n\nif (linkHeader) {\n  const match = linkHeader.match(/<(https?:\\/\\/[^>]+)>/);\n  if (match) websiteUrl = match[1];\n}\n\n// If not found, try to extract base URL from HTML\nif (!websiteUrl && html) {\n  const canonicalMatch = html.match(/<link[^>]*rel=[\"']canonical[\"'][^>]*href=[\"']([^\"']+)[\"']/);\n  if (canonicalMatch) {\n    websiteUrl = canonicalMatch[1].trim();\n    // Handle protocol-relative URLs\n    if (websiteUrl.startsWith('//')) {\n      websiteUrl = 'https:' + websiteUrl;\n    }\n    // Ensure URL has a protocol\n    if (!websiteUrl.startsWith('http://') && !websiteUrl.startsWith('https://')) {\n      websiteUrl = 'https://' + websiteUrl;\n    }\n  }\n}\n\nif (!websiteUrl) {\n  throw new Error('Could not determine website URL from response');\n}\n\n// Clean and validate the URL\nwebsiteUrl = websiteUrl.trim().replace(/[\\r\\n\\t]/g, '');\n\n// Extract origin from URL\nlet baseUrl = '';\ntry {\n  const urlObj = new URL(websiteUrl);\n  baseUrl = urlObj.origin;\n} catch (error) {\n  // Fallback: try to extract domain manually\n  const domainMatch = websiteUrl.match(/^(https?:\\/\\/[^\\/]+)/);\n  if (domainMatch) {\n    baseUrl = domainMatch[1];\n  } else {\n    throw new Error(`Could not parse URL: ${websiteUrl}`);\n  }\n}\n\n// Start with the base URL\nconst urls = [baseUrl];\n\n// Extract all href links from HTML\nconst allHrefs = html.split('href=');\n\nfor (let i = 1; i < allHrefs.length && urls.length < 20; i++) {\n  const part = allHrefs[i];\n  let url = '';\n  \n  // Extract URL from quotes\n  if (part[0] === '\"') {\n    const end = part.indexOf('\"', 1);\n    if (end > 0) url = part.substring(1, end);\n  } else if (part[0] === \"'\") {\n    const end = part.indexOf(\"'\", 1);\n    if (end > 0) url = part.substring(1, end);\n  }\n  \n  // Skip anchors, mailto, tel links\n  if (!url || url[0] === '#' || url.startsWith('mailto:') || url.startsWith('tel:')) {\n    continue;\n  }\n  \n  // Convert relative URLs to absolute\n  if (url.startsWith('//')) {\n    // Protocol-relative URL\n    url = 'https:' + url;\n  } else if (url[0] === '/') {\n    // Path-relative URL\n    url = baseUrl + url;\n  } else if (!url.startsWith('http')) {\n    continue;\n  }\n  \n  // Skip xmlrpc, wp-json, feed, and other non-page URLs\n  if (url.indexOf('xmlrpc') >= 0 || url.indexOf('wp-json') >= 0 || \n      url.indexOf('/feed') >= 0 || url.indexOf('.xml') >= 0 || \n      url.indexOf('.json') >= 0 || url.indexOf('.rss') >= 0) {\n    continue;\n  }\n  \n  // Only keep URLs from same domain\n  if (url.startsWith(baseUrl)) {\n    // Remove query params and hash\n    const qPos = url.indexOf('?');\n    const hPos = url.indexOf('#');\n    if (qPos > 0) url = url.substring(0, qPos);\n    if (hPos > 0) url = url.substring(0, hPos);\n    \n    // Check for duplicates\n    if (!urls.includes(url)) {\n      urls.push(url);\n    }\n  }\n}\n\n// Return array of URLs as separate items for processing\nreturn urls.map(u => ({ json: { url: u } }));"
       },
       "id": "15",
       "name": "Extract Navigation Links",
@@ -281,13 +283,22 @@
     {
       "parameters": {
         "url": "={{ $json.url }}",
-        "options": {}
+        "options": {
+          "timeout": 10000,
+          "redirect": {
+            "redirect": {
+              "followRedirects": true,
+              "maxRedirects": 5
+            }
+          }
+        }
       },
       "id": "17",
       "name": "Scrape Page",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [0, 200]
+      "position": [0, 200],
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -317,15 +328,53 @@
     },
     {
       "parameters": {
-        "mode": "runOnceForAllItems",
+        "mode": "runOnceForEachItem",
         "language": "javaScript",
-        "code": "const items = $input.all();\nlet combinedHtml = '';\nfor (const item of items) {\n  const url = item.json.pageUrl || '';\n  const html = item.json.pageHtml || '';\n  combinedHtml += `\\n\\n---PAGE: ${url}---\\n${html}`;\n}\nreturn [{ json: { allPagesHtml: combinedHtml } }];"
+        "code": "return $input.all();"
       },
       "id": "19",
       "name": "Aggregate HTML",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [400, 200]
+      "position": [300, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p1",
+              "name": "pageUrl",
+              "value": "={{ $json.pageUrl || $json.url || 'Unknown' }}",
+              "type": "string"
+            },
+            {
+              "id": "p2",
+              "name": "pageHtml",
+              "value": "={{ $json.pageHtml || $json.body || '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "19-fix",
+      "name": "Fix Aggregate Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [350, 200]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "code": "var items = $input.all();\nvar parts = [];\n\nfor (var i = 0; i < items.length; i++) {\n  if (items[i] && items[i].json && items[i].json.pageHtml) {\n    parts.push(items[i].json.pageHtml);\n  }\n}\n\nvar result = parts.length > 0 ? parts.join('\\n\\n') : 'No HTML content extracted';\n\nreturn [{ json: { allPagesHtml: result } }];"
+      },
+      "id": "20",
+      "name": "Combine All Pages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 200]
     }
   ],
   "connections": {
@@ -393,14 +442,25 @@
       "main": [
         [
           {
-            "node": "Aggregate HTML",
+            "node": "Fix Aggregate Output",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Aggregate HTML": {
+    "Fix Aggregate Output": {
+      "main": [
+        [
+          {
+            "node": "Combine All Pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine All Pages": {
       "main": [
         [
           {
